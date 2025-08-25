@@ -55,7 +55,7 @@ def handle_message(message):
         )
         output = result.stdout or result.stderr
     except Exception as e:
-        output = f"Ошибка запуска Cursor CLI: {e}"
+        output = f"Походу пизда: {e}"
 
     bot.reply_to(message, output[:4000])
 
