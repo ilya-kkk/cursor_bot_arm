@@ -13,10 +13,12 @@ bot = TeleBot(TOKEN)
 USERS_FILE = Path("users.json")
 SESSIONS_FILE = Path("cursor_sessions.json")
 
+# Создаем файлы, если их нет
 for f in [USERS_FILE, SESSIONS_FILE]:
     if not f.exists():
         f.touch()
 
+# Загрузка пользователей
 allowed_users = []
 if USERS_FILE.is_file() and USERS_FILE.stat().st_size > 0:
     try:
@@ -24,6 +26,7 @@ if USERS_FILE.is_file() and USERS_FILE.stat().st_size > 0:
     except json.JSONDecodeError:
         allowed_users = []
 
+# Загрузка сохраненных сессий
 sessions = {}
 if SESSIONS_FILE.is_file() and SESSIONS_FILE.stat().st_size > 0:
     try:
@@ -38,27 +41,38 @@ def save_sessions():
 
 
 def extract_text_from_line(line: str) -> str | None:
+    """Вытаскивает текст из JSON-строки cursor-agent, если это ответ ассистента."""
     try:
         data = json.loads(line)
     except json.JSONDecodeError:
         return None
 
-    if data.get("type") == "assistant":
-        message = data.get("message", {})
-        content = message.get("content", [])
-        texts = [item["text"] for item in content if item.get("type") == "text" and "text" in item]
-        return "".join(texts)
-    
     # Сохраняем session_id
     if data.get("type") == "system" and data.get("subtype") == "init":
         sid = data.get("session_id")
         if sid:
             sessions["last_session_id"] = sid
             save_sessions()
+
+    # Извлекаем текст ассистента
+    if data.get("type") == "assistant":
+        message = data.get("message", {})
+        content = message.get("content", [])
+        texts = []
+        for item in content:
+            if "text" in item:
+                texts.append(item["text"])
+            elif "content" in item:  # вложенные элементы
+                for sub in item.get("content", []):
+                    if "text" in sub:
+                        texts.append(sub["text"])
+        if texts:
+            return "".join(texts)
     return None
 
 
 def extract_tool_call_status(line: str) -> str | None:
+    """Вытаскивает информацию о вызовах инструментов для прогресса."""
     try:
         data = json.loads(line)
     except json.JSONDecodeError:
@@ -112,6 +126,7 @@ def handle_message(message):
         bot.send_message(chat_id, "Нет текста для отправки в Cursor CLI.", message_thread_id=thread_id)
         return
 
+    # Проверяем флаг --resume=<ID>
     resume_flag = ""
     for part in command_text.split():
         if part.startswith("--resume="):
@@ -151,9 +166,13 @@ def handle_message(message):
 
             if assistant_text:
                 buffer += assistant_text + "\n"
+            elif "assistant" in line:  # на всякий случай добавляем сырую JSON строку
+                buffer += line + "\n"
+
             if tool_status:
                 buffer += tool_status + "\n"
 
+            # Обновляем сообщение каждые UPDATE_INTERVAL секунд или при накоплении большого текста
             if buffer and (time.time() - last_update_time > UPDATE_INTERVAL or len(buffer) > 500):
                 accumulated_text += buffer
                 try:
@@ -167,11 +186,11 @@ def handle_message(message):
                 buffer = ""
                 last_update_time = time.time()
 
-        # финальный апдейт
+        # Финальный апдейт
         if buffer:
             accumulated_text += buffer
 
-        # добавляем session_id в конец
+        # Добавляем session_id в конец
         if "last_session_id" in sessions:
             accumulated_text += f"\n\nSession ID: {sessions['last_session_id']}"
 
