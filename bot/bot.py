@@ -25,9 +25,7 @@ if USERS_FILE.is_file() and USERS_FILE.stat().st_size > 0:
 
 
 def extract_text_from_line(line: str) -> str | None:
-    """
-    Вытаскивает текст из JSON-строки cursor-agent, если это ответ ассистента.
-    """
+    """Вытаскивает текст из JSON-строки cursor-agent, если это ответ ассистента."""
     try:
         data = json.loads(line)
     except json.JSONDecodeError:
@@ -38,6 +36,38 @@ def extract_text_from_line(line: str) -> str | None:
         content = message.get("content", [])
         texts = [item["text"] for item in content if item.get("type") == "text" and "text" in item]
         return "".join(texts)
+    return None
+
+
+def extract_tool_call_status(line: str) -> str | None:
+    """
+    Вытаскивает информацию о вызовах инструментов (tool_call) из JSON-строки.
+    Возвращает строку статуса для отображения прогресса.
+    """
+    try:
+        data = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+
+    if data.get("type") == "tool_call":
+        subtype = data.get("subtype")
+        call_id = data.get("call_id")
+        tool_info = data.get("tool_call", {})
+
+        # Если инструмент завершился с ошибкой
+        result_text = ""
+        if subtype == "completed":
+            for tool_name, result in tool_info.items():
+                res = result.get("result", {})
+                if "error" in res:
+                    error_msg = res["error"].get("errorMessage", "неизвестная ошибка")
+                    result_text = f"[{tool_name}] Ошибка: {error_msg}\n"
+                else:
+                    result_text = f"[{tool_name}] Выполнено успешно\n"
+        elif subtype == "started":
+            result_text = f"[{list(tool_info.keys())[0]}] Запуск...\n"
+
+        return f"({call_id}) {result_text}"
     return None
 
 
@@ -58,7 +88,7 @@ def register_user(message):
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     chat_id = message.chat.id
-    thread_id = getattr(message, "message_thread_id", None)  # сохраняем ID топика
+    thread_id = getattr(message, "message_thread_id", None)
 
     if chat_id not in allowed_users:
         return
@@ -86,9 +116,17 @@ def handle_message(message):
             if not line:
                 continue
 
-            new_text = extract_text_from_line(line)
-            if new_text:
-                accumulated_text += new_text
+            assistant_text = extract_text_from_line(line)
+            tool_status = extract_tool_call_status(line)
+
+            update_text = ""
+            if assistant_text:
+                update_text += assistant_text + "\n"
+            if tool_status:
+                update_text += tool_status + "\n"
+
+            if update_text:
+                accumulated_text += update_text
                 try:
                     bot.edit_message_text(
                         chat_id=chat_id,
