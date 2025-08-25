@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 from telebot import TeleBot, types
 
-# Получаем токен из переменной окружения
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN не задан в переменных окружениях!")
@@ -12,21 +11,22 @@ if not TOKEN:
 bot = TeleBot(TOKEN)
 USERS_FILE = Path("users.json")
 
-# Загрузка сохраненных пользователей
+# Если файла нет — создаём пустой
+if not USERS_FILE.exists():
+    USERS_FILE.touch()
+
+# Загрузка пользователей
 allowed_users = []
-if USERS_FILE.exists() and USERS_FILE.is_file():
+if USERS_FILE.is_file() and USERS_FILE.stat().st_size > 0:
     try:
-        # Проверяем, что файл не пустой
-        if USERS_FILE.stat().st_size > 0:
-            with open(USERS_FILE, "r") as f:
-                allowed_users = json.load(f)
+        allowed_users = json.load(open(USERS_FILE, "r"))
     except json.JSONDecodeError:
-        allowed_users = []  # Если файл пустой или сломан, просто создаём пустой список
+        allowed_users = []
 
 @bot.message_handler(commands=['work'])
 def register_user(message):
     global allowed_users
-    if USERS_FILE.exists() and USERS_FILE.is_file() and allowed_users:
+    if allowed_users:
         bot.reply_to(message, "Файл с пользователями уже существует. Регистрация закрыта.")
         return
 
@@ -39,11 +39,8 @@ def register_user(message):
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     chat_id = message.chat.id
-    if USERS_FILE.exists() and USERS_FILE.is_file():
-        if chat_id not in allowed_users:
-            return  # Игнорируем незарегистрированных пользователей
-    else:
-        return  # ещё никто не зарегистрирован
+    if chat_id not in allowed_users:
+        return
 
     command_text = message.text
     if not command_text:
@@ -60,7 +57,7 @@ def handle_message(message):
     except Exception as e:
         output = f"Ошибка запуска Cursor CLI: {e}"
 
-    bot.reply_to(message, output[:4000])  # Telegram ограничение 4096 символов
+    bot.reply_to(message, output[:4000])
 
 print("Бот запущен...")
 bot.polling(none_stop=True)
