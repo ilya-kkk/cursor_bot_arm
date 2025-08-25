@@ -23,7 +23,7 @@ if USERS_FILE.is_file() and USERS_FILE.stat().st_size > 0:
     except json.JSONDecodeError:
         allowed_users = []
 
-@bot.message_handler(commands=['work'])
+@bot.message_handler(commands=['work_rock'])
 def register_user(message):
     global allowed_users
     if allowed_users:
