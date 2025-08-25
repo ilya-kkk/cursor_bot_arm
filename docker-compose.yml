@@ -11,3 +11,4 @@ services:
     volumes:
       - ./bot/users.json:/app/bot/users.json
       - /root/.local/bin/cursor-agent:/root/.local/bin/cursor-agent:ro
+    entrypoint: ["python", "bot.py"]
