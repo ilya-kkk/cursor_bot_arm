@@ -12,3 +12,4 @@ WORKDIR /app/bot
 # Устанавливаем Python-зависимости
 RUN pip install --no-cache-dir pyTelegramBotAPI
 
+RUN ln -s /usr/bin/node /usr/local/bin/node
