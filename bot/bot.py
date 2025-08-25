@@ -1,6 +1,7 @@
 import subprocess
 import json
 import os
+import time
 from pathlib import Path
 from telebot import TeleBot
 
@@ -12,12 +13,10 @@ bot = TeleBot(TOKEN)
 USERS_FILE = Path("users.json")
 SESSIONS_FILE = Path("cursor_sessions.json")
 
-# Если файлов нет — создаём пустые
 for f in [USERS_FILE, SESSIONS_FILE]:
     if not f.exists():
         f.touch()
 
-# Загрузка пользователей
 allowed_users = []
 if USERS_FILE.is_file() and USERS_FILE.stat().st_size > 0:
     try:
@@ -25,7 +24,6 @@ if USERS_FILE.is_file() and USERS_FILE.stat().st_size > 0:
     except json.JSONDecodeError:
         allowed_users = []
 
-# Загрузка сохранённых сессий
 sessions = {}
 if SESSIONS_FILE.is_file() and SESSIONS_FILE.stat().st_size > 0:
     try:
@@ -40,7 +38,6 @@ def save_sessions():
 
 
 def extract_text_from_line(line: str) -> str | None:
-    """Вытаскивает текст из JSON-строки cursor-agent, если это ответ ассистента."""
     try:
         data = json.loads(line)
     except json.JSONDecodeError:
@@ -51,7 +48,8 @@ def extract_text_from_line(line: str) -> str | None:
         content = message.get("content", [])
         texts = [item["text"] for item in content if item.get("type") == "text" and "text" in item]
         return "".join(texts)
-    # Сохраняем session_id, если есть
+    
+    # Сохраняем session_id
     if data.get("type") == "system" and data.get("subtype") == "init":
         sid = data.get("session_id")
         if sid:
@@ -61,7 +59,6 @@ def extract_text_from_line(line: str) -> str | None:
 
 
 def extract_tool_call_status(line: str) -> str | None:
-    """Вытаскивает информацию о вызовах инструментов для прогресса."""
     try:
         data = json.loads(line)
     except json.JSONDecodeError:
@@ -115,7 +112,6 @@ def handle_message(message):
         bot.send_message(chat_id, "Нет текста для отправки в Cursor CLI.", message_thread_id=thread_id)
         return
 
-    # проверяем флаг --resume=<ID>
     resume_flag = ""
     for part in command_text.split():
         if part.startswith("--resume="):
@@ -130,7 +126,6 @@ def handle_message(message):
         cmd = ["/home/orangepi/.local/bin/cursor-agent"]
         if resume_flag:
             cmd.append(resume_flag)
-        # добавляем остальной текст
         cmd += [part for part in command_text.split() if not part.startswith("--resume=")]
 
         process = subprocess.Popen(
@@ -142,6 +137,10 @@ def handle_message(message):
         )
 
         accumulated_text = ""
+        buffer = ""
+        last_update_time = time.time()
+        UPDATE_INTERVAL = 1.0  # секунда
+
         for line in process.stdout:
             line = line.strip()
             if not line:
@@ -150,14 +149,13 @@ def handle_message(message):
             assistant_text = extract_text_from_line(line)
             tool_status = extract_tool_call_status(line)
 
-            update_text = ""
             if assistant_text:
-                update_text += assistant_text + "\n"
+                buffer += assistant_text + "\n"
             if tool_status:
-                update_text += tool_status + "\n"
+                buffer += tool_status + "\n"
 
-            if update_text:
-                accumulated_text += update_text
+            if buffer and (time.time() - last_update_time > UPDATE_INTERVAL or len(buffer) > 500):
+                accumulated_text += buffer
                 try:
                     bot.edit_message_text(
                         chat_id=chat_id,
@@ -166,6 +164,25 @@ def handle_message(message):
                     )
                 except Exception as e:
                     print(f"Ошибка редактирования: {e}")
+                buffer = ""
+                last_update_time = time.time()
+
+        # финальный апдейт
+        if buffer:
+            accumulated_text += buffer
+
+        # добавляем session_id в конец
+        if "last_session_id" in sessions:
+            accumulated_text += f"\n\nSession ID: {sessions['last_session_id']}"
+
+        try:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=sent.message_id,
+                text=accumulated_text[-4000:]
+            )
+        except Exception as e:
+            print(f"Ошибка редактирования финального текста: {e}")
 
         process.wait()
 
