@@ -13,4 +13,6 @@ COPY bot/ ./bot
 WORKDIR /app/bot
 RUN pip install --no-cache-dir pyTelegramBotAPI
 
+# Выполняем автологин через токен из ENV
+RUN /root/.local/bin/cursor-agent login --token $CURSOR_TOKEN
 
