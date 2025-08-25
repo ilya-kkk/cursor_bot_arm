@@ -1,6 +1,6 @@
 # Cursor Bot ARM
 
-Telegram-бот для интеграции с Cursor Agent CLI на ARM-архитектуре (протестировано на Orange Pi с процессором RK3588).
+Telegram-бот имба(!!!)  для интеграции с Cursor Agent CLI на ARM-архитектуре (протестировано на Orange Pi с процессором RK3588).
 
 ## Описание
 
