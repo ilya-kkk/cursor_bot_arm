@@ -58,17 +58,18 @@ def register_user(message):
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     chat_id = message.chat.id
+    thread_id = getattr(message, "message_thread_id", None)  # сохраняем топик
     if chat_id not in allowed_users:
         return
 
     command_text = message.text
     if not command_text:
-        bot.reply_to(message, "Нет текста для отправки в Cursor CLI.")
+        bot.send_message(chat_id, "Нет текста для отправки в Cursor CLI.", message_thread_id=thread_id)
         return
 
     try:
         # отправляем "заглушку", чтобы потом редактировать
-        sent = bot.send_message(chat_id, "⏳ Выполняю запрос...")
+        sent = bot.send_message(chat_id, "⏳ Выполняю запрос...", message_thread_id=thread_id)
 
         process = subprocess.Popen(
             ["/home/orangepi/.local/bin/cursor-agent"] + command_text.split(),
@@ -91,15 +92,16 @@ def handle_message(message):
                     bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=sent.message_id,
-                        text=accumulated_text[-4000:]  # ограничение Telegram
+                        text=accumulated_text[-4000:],  # ограничение Telegram
+                        message_thread_id=thread_id
                     )
                 except Exception:
-                    pass  # иногда может быть FLOOD_LIMIT
+                    pass  # ловим FLOOD_LIMIT или редактирование без изменений
 
         process.wait()
 
     except Exception as e:
-        bot.reply_to(message, f"Ошибка запуска cursor-agent: {e}")
+        bot.send_message(chat_id, f"Ошибка запуска cursor-agent: {e}", message_thread_id=thread_id)
 
 
 print("Бот запущен...")
