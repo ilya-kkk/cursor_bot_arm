@@ -72,31 +72,40 @@ def extract_text_from_line(line: str) -> str | None:
 
 
 def extract_tool_call_status(line: str) -> str | None:
-    """Вытаскивает информацию о вызовах инструментов для прогресса."""
+    """
+    Вытаскивает информацию о вызовах инструментов и всегда отображает "Выполнено" 
+    после завершения, даже если subtype был 'started'.
+    Добавляет переносы после точек в сообщениях.
+    """
     try:
         data = json.loads(line)
     except json.JSONDecodeError:
         return None
 
-    if data.get("type") == "tool_call":
-        subtype = data.get("subtype")
-        call_id = data.get("call_id")
-        tool_info = data.get("tool_call", {})
+    if data.get("type") != "tool_call":
+        return None
 
-        result_text = ""
-        if subtype == "completed":
-            for tool_name, result in tool_info.items():
-                res = result.get("result", {})
-                if "error" in res:
-                    error_msg = res["error"].get("errorMessage", "неизвестная ошибка")
-                    result_text = f"[{tool_name}] Ошибка: {error_msg}\n"
-                else:
-                    result_text = f"[{tool_name}] Выполнено успешно\n"
-        elif subtype == "started":
-            result_text = f"[{list(tool_info.keys())[0]}] Запуск...\n"
+    call_id = data.get("call_id", "unknown")
+    tool_info = data.get("tool_call", {})
 
-        return f"({call_id}) {result_text}"
+    messages = []
+    for tool_name, result in tool_info.items():
+        # Если есть ошибка
+        if "result" in result and "error" in result["result"]:
+            error_msg = result["result"]["error"].get("errorMessage", "неизвестная ошибка")
+            msg = f"[{tool_name}] Ошибка: {error_msg}"
+        else:
+            # Всегда пишем "Выполнено" независимо от типа события
+            msg = f"[{tool_name}] Выполнено успешно"
+
+        # Добавляем перенос после каждой точки
+        msg = msg.replace(". ", ".\n")
+        messages.append(msg)
+
+    if messages:
+        return f"({call_id}) " + "\n".join(messages)
     return None
+
 
 
 @bot.message_handler(commands=['work_rock'])
@@ -165,6 +174,7 @@ def handle_message(message):
             tool_status = extract_tool_call_status(line)
 
             if assistant_text:
+                assistant_text = assistant_text.replace(". ", ".\n")
                 buffer += assistant_text + "\n"
             elif "assistant" in line:  # на всякий случай добавляем сырую JSON строку
                 buffer += line + "\n"
