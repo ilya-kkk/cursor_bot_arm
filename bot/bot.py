@@ -49,7 +49,7 @@ def handle_message(message):
 
     try:
         result = subprocess.run(
-            ["/root/.local/bin/cursor-agent"] + command_text.split(),
+            ["/home/orangepi/.local/bin/cursor-agent"] + command_text.split(),
             capture_output=True,
             text=True
         )
