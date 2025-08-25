@@ -2,7 +2,7 @@ import subprocess
 import json
 import os
 from pathlib import Path
-from telebot import TeleBot, types
+from telebot import TeleBot
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TOKEN:
@@ -23,6 +23,33 @@ if USERS_FILE.is_file() and USERS_FILE.stat().st_size > 0:
     except json.JSONDecodeError:
         allowed_users = []
 
+
+def parse_cursor_stream(raw_output: str) -> str:
+    """
+    Парсит JSON-стрим от cursor-agent и вытаскивает текст из ответов ассистента
+    """
+    lines = raw_output.splitlines()
+    texts = []
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            continue  # пропускаем некорректные строки
+
+        if data.get("type") == "assistant":
+            message = data.get("message", {})
+            content = message.get("content", [])
+            for item in content:
+                if item.get("type") == "text" and "text" in item:
+                    texts.append(item["text"])
+
+    return "\n".join(texts) if texts else raw_output
+
+
 @bot.message_handler(commands=['work_rock'])
 def register_user(message):
     global allowed_users
@@ -35,6 +62,7 @@ def register_user(message):
     with open(USERS_FILE, "w") as f:
         json.dump(allowed_users, f)
     bot.reply_to(message, f"Регистрация завершена. Этот chat_id будет использоваться для сообщений.")
+
 
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
@@ -53,11 +81,13 @@ def handle_message(message):
             capture_output=True,
             text=True
         )
-        output = result.stdout or result.stderr
+        raw_output = result.stdout or result.stderr
+        output = parse_cursor_stream(raw_output)
     except Exception as e:
-        output = f"Походу пизда: {e}"
+        output = f"Ошибка запуска cursor-agent: {e}"
 
     bot.reply_to(message, output[:4000])
+
 
 print("Бот запущен...")
 bot.polling(none_stop=True)
