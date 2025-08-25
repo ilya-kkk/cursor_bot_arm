@@ -93,8 +93,7 @@ def handle_message(message):
                     bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=sent.message_id,
-                        text=accumulated_text[-4000:],  # ограничение Telegram
-                        message_thread_id=thread_id
+                        text=accumulated_text[-4000:]
                     )
                 except Exception as e:
                     print(f"Ошибка редактирования: {e}")
