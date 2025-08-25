@@ -10,3 +10,4 @@ services:
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}  # токен берется из локального ENV
     volumes:
       - ./bot/users.json:/app/bot/users.json
+      - /root/.local/bin/cursor-agent:/root/.local/bin/cursor-agent:ro
