@@ -24,30 +24,21 @@ if USERS_FILE.is_file() and USERS_FILE.stat().st_size > 0:
         allowed_users = []
 
 
-def parse_cursor_stream(raw_output: str) -> str:
+def extract_text_from_line(line: str) -> str | None:
     """
-    Парсит JSON-стрим от cursor-agent и вытаскивает текст из ответов ассистента
+    Вытаскивает текст из JSON-строки cursor-agent, если это ответ ассистента.
     """
-    lines = raw_output.splitlines()
-    texts = []
+    try:
+        data = json.loads(line)
+    except json.JSONDecodeError:
+        return None
 
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            data = json.loads(line)
-        except json.JSONDecodeError:
-            continue  # пропускаем некорректные строки
-
-        if data.get("type") == "assistant":
-            message = data.get("message", {})
-            content = message.get("content", [])
-            for item in content:
-                if item.get("type") == "text" and "text" in item:
-                    texts.append(item["text"])
-
-    return "\n".join(texts) if texts else raw_output
+    if data.get("type") == "assistant":
+        message = data.get("message", {})
+        content = message.get("content", [])
+        texts = [item["text"] for item in content if item.get("type") == "text" and "text" in item]
+        return "".join(texts)
+    return None
 
 
 @bot.message_handler(commands=['work_rock'])
@@ -76,17 +67,39 @@ def handle_message(message):
         return
 
     try:
-        result = subprocess.run(
-            ["/home/orangepi/.local/bin/cursor-agent"] + command_text.split(),
-            capture_output=True,
-            text=True
-        )
-        raw_output = result.stdout or result.stderr
-        output = parse_cursor_stream(raw_output)
-    except Exception as e:
-        output = f"Ошибка запуска cursor-agent: {e}"
+        # отправляем "заглушку", чтобы потом редактировать
+        sent = bot.send_message(chat_id, "⏳ Выполняю запрос...")
 
-    bot.reply_to(message, output[:4000])
+        process = subprocess.Popen(
+            ["/home/orangepi/.local/bin/cursor-agent"] + command_text.split(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
+
+        accumulated_text = ""
+        for line in process.stdout:
+            line = line.strip()
+            if not line:
+                continue
+
+            new_text = extract_text_from_line(line)
+            if new_text:
+                accumulated_text += new_text
+                try:
+                    bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=sent.message_id,
+                        text=accumulated_text[-4000:]  # ограничение Telegram
+                    )
+                except Exception:
+                    pass  # иногда может быть FLOOD_LIMIT
+
+        process.wait()
+
+    except Exception as e:
+        bot.reply_to(message, f"Ошибка запуска cursor-agent: {e}")
 
 
 print("Бот запущен...")
