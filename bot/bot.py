@@ -10,10 +10,12 @@ if not TOKEN:
 
 bot = TeleBot(TOKEN)
 USERS_FILE = Path("users.json")
+SESSIONS_FILE = Path("cursor_sessions.json")
 
-# Если файла нет — создаём пустой
-if not USERS_FILE.exists():
-    USERS_FILE.touch()
+# Если файлов нет — создаём пустые
+for f in [USERS_FILE, SESSIONS_FILE]:
+    if not f.exists():
+        f.touch()
 
 # Загрузка пользователей
 allowed_users = []
@@ -22,6 +24,19 @@ if USERS_FILE.is_file() and USERS_FILE.stat().st_size > 0:
         allowed_users = json.load(open(USERS_FILE, "r"))
     except json.JSONDecodeError:
         allowed_users = []
+
+# Загрузка сохранённых сессий
+sessions = {}
+if SESSIONS_FILE.is_file() and SESSIONS_FILE.stat().st_size > 0:
+    try:
+        sessions = json.load(open(SESSIONS_FILE, "r"))
+    except json.JSONDecodeError:
+        sessions = {}
+
+
+def save_sessions():
+    with open(SESSIONS_FILE, "w") as f:
+        json.dump(sessions, f)
 
 
 def extract_text_from_line(line: str) -> str | None:
@@ -36,14 +51,17 @@ def extract_text_from_line(line: str) -> str | None:
         content = message.get("content", [])
         texts = [item["text"] for item in content if item.get("type") == "text" and "text" in item]
         return "".join(texts)
+    # Сохраняем session_id, если есть
+    if data.get("type") == "system" and data.get("subtype") == "init":
+        sid = data.get("session_id")
+        if sid:
+            sessions["last_session_id"] = sid
+            save_sessions()
     return None
 
 
 def extract_tool_call_status(line: str) -> str | None:
-    """
-    Вытаскивает информацию о вызовах инструментов (tool_call) из JSON-строки.
-    Возвращает строку статуса для отображения прогресса.
-    """
+    """Вытаскивает информацию о вызовах инструментов для прогресса."""
     try:
         data = json.loads(line)
     except json.JSONDecodeError:
@@ -54,7 +72,6 @@ def extract_tool_call_status(line: str) -> str | None:
         call_id = data.get("call_id")
         tool_info = data.get("tool_call", {})
 
-        # Если инструмент завершился с ошибкой
         result_text = ""
         if subtype == "completed":
             for tool_name, result in tool_info.items():
@@ -98,12 +115,26 @@ def handle_message(message):
         bot.send_message(chat_id, "Нет текста для отправки в Cursor CLI.", message_thread_id=thread_id)
         return
 
+    # проверяем флаг --resume=<ID>
+    resume_flag = ""
+    for part in command_text.split():
+        if part.startswith("--resume="):
+            resume_flag = part
+            break
+    if not resume_flag and "last_session_id" in sessions:
+        resume_flag = f"--resume={sessions['last_session_id']}"
+
     try:
-        # отправляем "заглушку", чтобы потом редактировать её
         sent = bot.send_message(chat_id, "⏳ Выполняю запрос...", message_thread_id=thread_id)
 
+        cmd = ["/home/orangepi/.local/bin/cursor-agent"]
+        if resume_flag:
+            cmd.append(resume_flag)
+        # добавляем остальной текст
+        cmd += [part for part in command_text.split() if not part.startswith("--resume=")]
+
         process = subprocess.Popen(
-            ["/home/orangepi/.local/bin/cursor-agent"] + command_text.split(),
+            cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
