@@ -15,7 +15,8 @@ WORKDIR /app/bot
 RUN pip install --no-cache-dir pyTelegramBotAPI
 
 # Cursor CLI: предполагаем что у тебя есть бинарь ARM в ./cursor
-COPY cursor /usr/local/bin/cursor
-RUN chmod +x /usr/local/bin/cursor
+COPY cursor-agent /root/.local/bin/cursor-agent
+
+RUN chmod +x /root/.local/bin/cursor-agent
 
 CMD ["python", "bot.py"]
