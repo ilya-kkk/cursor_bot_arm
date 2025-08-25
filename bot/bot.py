@@ -49,7 +49,7 @@ def handle_message(message):
 
     try:
         result = subprocess.run(
-            ["/usr/local/bin/cursor-agent"] + command_text.split(),
+            ["node", "/app/cursor-agent/cursor-agent"] + command_text.split(),
             capture_output=True,
             text=True
         )
